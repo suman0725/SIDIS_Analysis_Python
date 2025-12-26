@@ -18,6 +18,7 @@ import pandas as pd
 import uproot
 
 from physics_constants import E_BEAM
+from common_cuts import 
 from physics import (
     get_Q2, get_W, get_y, get_xB, get_nu,
     get_zh, get_pt2, get_phih, get_theta, get_phi,
@@ -36,17 +37,6 @@ def forward_status_mask(status):
     abs_status = np.abs(status)
     return (abs_status >= FORWARD_STATUS_MIN) & (abs_status < FORWARD_STATUS_MAX)
 
-def detect_polarity(path, tree_names=("data;24", "data;8")) -> str:
-    """Read RUN_config_torus from the first entry to decide polarity."""
-    for tname in tree_names:
-        try:
-            with uproot.open(path) as f:
-                tree = f[tname]
-                torus = tree.arrays("RUN_config_torus", entry_stop=1, library="np")["RUN_config_torus"][0]
-                return "OB" if torus > 0 else "IB"
-        except Exception:
-            continue
-    return "OB"
 
 # ==========================
 # 3. Process one ROOT file
@@ -54,7 +44,7 @@ def detect_polarity(path, tree_names=("data;24", "data;8")) -> str:
 
 def process_file(path, target, sample_type="data",
                  max_events=None, apply_tm=False, tm_min=None,
-                 start_event_idx=0):
+                 start_event_idx=0, diagnostic_mode=False):
     """
     Process a single ROOT file.
     """

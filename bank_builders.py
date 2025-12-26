@@ -22,6 +22,7 @@ REC_BRANCHES = [
     "REC_Event_helicity",
     # Particle info
     "REC_Particle_pid",
+    "REC_Particle_charge",
     "REC_Particle_px",
     "REC_Particle_py",
     "REC_Particle_pz",
@@ -107,6 +108,7 @@ def build_per_particle_arrays(arrs, target_group="LD2"):
     
     # Flatten Basic Kinematics
     pid    = ak.flatten(pid_jagged).to_numpy()
+    charge = ak.flatten(arrs["REC_Particle_charge"]).to_numpy()
     px     = ak.flatten(arrs["REC_Particle_px"]).to_numpy()
     py     = ak.flatten(arrs["REC_Particle_py"]).to_numpy()
     pz     = ak.flatten(arrs["REC_Particle_pz"]).to_numpy()
@@ -189,6 +191,7 @@ def build_per_particle_arrays(arrs, target_group="LD2"):
         "event_idx_local": np.repeat(np.arange(len(counts)), counts),
         
         "pid":    pid,
+        "charge": charge,
         "px":     px, "py": py, "pz": pz,
         "status": status,
         "vz":     vz,

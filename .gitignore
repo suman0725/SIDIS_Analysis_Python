@@ -1,0 +1,11 @@
+# Ignore python compiled files
+__pycache__/
+*.pyc
+
+# Ignore large data files
+*.parquet
+*.root
+
+# Ignore backups and diagnostic logs
+*_backup.py
+*.log

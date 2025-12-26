@@ -1,0 +1,1 @@
+python run_single_sample.py --target Cu --root-file /path/to/copper_data.root --out_dir ./outputs
