@@ -10,6 +10,7 @@ import pandas as pd
 import awkward as ak
 
 from physics import get_p, get_phi, get_sector
+from physics_constants import M_PION_PLUS, C_VEL
 
 # ---------------------------
 # 1) Branch list
@@ -31,6 +32,15 @@ REC_BRANCHES = [
     "REC_Particle_vy",
     "REC_Particle_beta",
     "REC_Particle_chi2pid",
+    "REC_Particle_vt",  # RF and z corrected vertex time
+    # Scintillator Bank (FTOF)
+    "REC_Scintillator_pindex",
+    "REC_Scintillator_detector",
+    "REC_Scintillator_layer",
+    "REC_Scintillator_time",
+    "REC_Scintillator_path",
+    "REC_Scintillator_sector",
+    "REC_Scintillator_component",
     # Cherenkov
     "REC_Cherenkov_pindex",
     "REC_Cherenkov_nphe",
@@ -181,6 +191,63 @@ def build_per_particle_arrays(arrs, target_group="LD2"):
     x_r2, y_r2, edge_r2 = map_dc(mask_r2, "x"), map_dc(mask_r2, "y"), map_dc(mask_r2, "edge")
     x_r3, y_r3, edge_r3 = map_dc(mask_r3, "x"), map_dc(mask_r3, "y"), map_dc(mask_r3, "edge")
 
+    # --- G. Timing Mapping (FTOF Priority: 2 -> 1 -> 3) ---
+    # We must ensure map_hits_to_particles returns 0.0 for "No Hit" 
+    # but keeps the data for "Out of Time" hits.
+
+    # 1. Get raw banks
+    scin_det = arrs["REC_Scintillator_detector"]
+    scin_lay = arrs["REC_Scintillator_layer"]
+
+    # 2. Priority layers separately
+    # map_hits_to_particles_vectorized must return the RAW time from the bank
+    t2 = map_hits_to_particles_vectorized(arrs, "REC_Scintillator", (scin_det == 12) & (scin_lay == 2), "time", total_particles, offsets)
+    p2 = map_hits_to_particles_vectorized(arrs, "REC_Scintillator", (scin_det == 12) & (scin_lay == 2), "path", total_particles, offsets)
+
+    t1 = map_hits_to_particles_vectorized(arrs, "REC_Scintillator", (scin_det == 12) & (scin_lay == 1), "time", total_particles, offsets)
+    p1 = map_hits_to_particles_vectorized(arrs, "REC_Scintillator", (scin_det == 12) & (scin_lay == 1), "path", total_particles, offsets)
+
+    t3 = map_hits_to_particles_vectorized(arrs, "REC_Scintillator", (scin_det == 12) & (scin_lay == 3), "time", total_particles, offsets)
+    p3 = map_hits_to_particles_vectorized(arrs, "REC_Scintillator", (scin_det == 12) & (scin_lay == 3), "path", total_particles, offsets)
+
+    # 3. PRIORITY LOGIC (C++ Replica)
+    # We choose T and P based on the existence of Layer 2, then 1, then 3.
+    best_t = np.zeros(total_particles)
+    best_p = np.zeros(total_particles)
+
+    # ADD THIS LINE TO FIX THE NAMEERROR:
+    # This creates an array that stores the layer number actually used for each track
+    used_lay = np.where(t2 > 0, 2, np.where(t1 > 0, 1, np.where(t3 > 0, 3, 0)))
+
+    # If Layer 3 has data, take it.
+    mask3 = (t3 > 0)
+    best_t[mask3] = t3[mask3]
+    best_p[mask3] = p3[mask3]
+
+    # If Layer 1 has data, it overwrites Layer 3.
+    mask1 = (t1 > 0)
+    best_t[mask1] = t1[mask1]
+    best_p[mask1] = p1[mask1]
+
+    # If Layer 2 has data, it overwrites everything else.
+    mask2 = (t2 > 0)
+    best_t[mask2] = t2[mask2]
+    best_p[mask2] = p2[mask2]
+
+    # --- H. Delta T Calculation (No aggressive cutting) ---
+    vt_particle = ak.flatten(arrs["REC_Particle_vt"]).to_numpy()
+    beta_theory = p_flat / np.sqrt(p_flat**2 + M_PION_PLUS**2)
+
+    # Calculation mask - ONLY filter out cases where there is NO detector hit at all
+    # and ensure p_flat > 0 to avoid division by zero.
+    has_hit = (best_t > 0) & (p_flat > 0)
+
+    pip_dt = np.full(total_particles, 99999.0, dtype=np.float32)
+
+    # Use r"..." to avoid syntax warnings in your labels later
+    # Delta_t = (time - path/(c*beta)) - vt
+    pip_dt[has_hit] = (best_t[has_hit] - (best_p[has_hit] / (C_VEL * beta_theory[has_hit]))) - vt_particle[has_hit]
+
     # --- G. Build Final DataFrame ---
     df = pd.DataFrame({
         # Event Info
@@ -200,6 +267,9 @@ def build_per_particle_arrays(arrs, target_group="LD2"):
         "sf":     sf_flat,
         "beta":   beta,   
         "chi2pid": chi2pid,
+        "vt":       vt_particle, 
+        "pip_dt":   pip_dt,      
+        "ftof_lay": used_lay,   
 
         # Cherenkov
         "Nphe_htcc": nphe_htcc,

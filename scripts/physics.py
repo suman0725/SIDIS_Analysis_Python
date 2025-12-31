@@ -14,7 +14,7 @@ from physics_constants import (
     M_ELECTRON,
     DEG2RAD,
     RAD2DEG,
-    M_PION_CHARGED, 
+    M_PION_PLUS, 
 )
 
 # -----------------------
@@ -213,7 +213,7 @@ def get_W(E_beam, px, py, pz, m_target=M_NUCLEON, mass_e=M_ELECTRON):
 def get_zh(E_beam,
            px_e, py_e, pz_e,
            px_h, py_h, pz_h,
-           mass_h=M_PION_CHARGED):
+           mass_h=M_PION_PLUS):
     """
     z_h ≈ E_h / nu  in fixed-target lab frame,
     where nu = E_beam - E_e.
