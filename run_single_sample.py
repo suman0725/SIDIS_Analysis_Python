@@ -168,37 +168,50 @@ def process_file(path, target, out_dir_path, sample_type="data",
         return pd.DataFrame(), cf_steps, len(arrs), 0
 
     # =========================================================
-    # MODE 2: FULL SIDIS PRODUCTION
+    # MODE 2: FINALIZED FULL SIDIS PRODUCTION
     # =========================================================
     df_e_all = df_all[final_mask].copy()
     if df_e_all.empty: return pd.DataFrame(), cf_steps, len(arrs), 0
 
+    # Pick the best electron for DIS normalization
     df_e_top = df_e_all.sort_values(["event_idx_local", "p"], ascending=[True, False]).groupby("event_idx_local", as_index=False).head(1)
     
+    # Isolate pions belonging to these DIS events
     pip_mask = is_fd_pip(df_all["pid"], df_all["status"])
     df_pip = df_all[pip_mask].copy()
     df_pip = df_pip[df_pip["event_idx_local"].isin(df_e_top["event_idx_local"].unique())].copy()
     
+    # Rename for clear e_ vs pip_ prefixes
     df_e_m = df_e_top.rename(columns={"px":"e_px", "py":"e_py", "pz":"e_pz", "p":"e_p", "vz":"e_vz", "event_id":"rc_event"})
     
+    # Calculate DIS Kinematics
     px_e, py_e, pz_e = df_e_m["e_px"].to_numpy(), df_e_m["e_py"].to_numpy(), df_e_m["e_pz"].to_numpy()
     df_e_m["Q2"] = get_Q2(E_BEAM, px_e, py_e, pz_e)
     df_e_m["xB"] = get_xB(E_BEAM, px_e, py_e, pz_e)
     df_e_m["W"]  = get_W(E_BEAM, px_e, py_e, pz_e)
     df_e_m["nu"] = get_nu(E_BEAM, px_e, py_e, pz_e)
+    df_e_m["w_e"] = 1  # Standard weight for DIS normalization
 
     df_pip_m = df_pip.rename(columns={"px":"pip_px", "py":"pip_py", "pz":"pip_pz", "p":"pip_p", "vz":"pip_vz", "beta":"pip_beta", "chi2pid":"pip_chi2pid"})
 
+    # LEFT MERGE: Preserve all electrons (even if 0 pions) for RA denominator
     df_sidis = pd.merge(df_e_m, df_pip_m[["event_idx_local", "pip_px", "pip_py", "pip_pz", "pip_p", "pip_vz", "pip_beta", "pip_chi2pid"]], on="event_idx_local", how="left")
     
     if not df_sidis.empty:
+        # SIDIS Variables (pT2 and zh are used for RA and Broadening)
         df_sidis["zh"] = get_zh(E_BEAM, df_sidis["e_px"], df_sidis["e_py"], df_sidis["e_pz"], df_sidis["pip_px"], df_sidis["pip_py"], df_sidis["pip_pz"])
         df_sidis["pT2"] = get_pt2(E_BEAM, df_sidis["e_px"], df_sidis["e_py"], df_sidis["e_pz"], df_sidis["pip_px"], df_sidis["pip_py"], df_sidis["pip_pz"])
+        # phi_h is used for Azimuthal Modulations
         df_sidis["phi_h"] = get_phih(E_BEAM, df_sidis["e_px"], df_sidis["e_py"], df_sidis["e_pz"], df_sidis["pip_px"], df_sidis["pip_py"], df_sidis["pip_pz"], True)
+        
+        # Flag rows with a matched pion
         df_sidis["w_pip"] = np.where(df_sidis["pip_p"].notna(), 1, 0)
         df_sidis["sel_event_idx"] = df_sidis["event_idx_local"] + start_event_idx
 
-    out_cols = ["run", "rc_event", "sel_event_idx", "e_p", "e_vz", "Q2", "xB", "W", "nu", "pip_p", "pip_vz", "pip_beta", "pip_chi2pid", "zh", "pT2", "phi_h", "w_pip"]
+    # Final columns needed for RA, Broadening, and Modulations
+    out_cols = ["run", "rc_event", "sel_event_idx", "w_e", "w_pip", "e_p", "e_vz", "Q2", "xB", "W", "nu", 
+                "pip_p", "pip_vz", "pip_beta", "pip_chi2pid", "zh", "pT2", "phi_h"]
+    
     for c in out_cols:
         if c not in df_sidis.columns: df_sidis[c] = np.nan
             
